@@ -1,0 +1,102 @@
+= Opalia Service Neo4j
+
+This project is a set of OSGi components that manages an embedded instance of https://github.com/neo4j/neo4j[Neo4j].
+It provides an API for a type-safe access to the database via plain Cypher Query Language.
+
+Download new versions from the Git repository https://github.com/OpaliaSystems/opalia-service-neo4j.
+
+=== Getting Started
+
+The components are handled by the Service Component Runtime (SCR) and becomes automatically available when all
+dependencies are resolved. Once the components becomes available, a transactional instance can be created from the
+database service. All Cypher statements should be placed in such a transaction.
+
+[source,scala]
+----
+val transactional = databaseService.newTransactional()
+
+    transactional.withTransaction {
+      implicit executor =>
+
+        Query("match (n:Person)-[:HAS]-(m:Pet) return n, m").execute[IgnoredResult]()
+    }
+----
+
+==== Configuration
+
+The configuration is done by https://github.com/lightbend/config[HOCON]. Examples are available in directory
+./testing/src/test/resources/ to get a quick insight into supported operations.
+
+==== Executing a query
+
+If the cypher query needs dynamic parameters, these can be added by declaring placeholders like {this} inside the
+query clause. Each parameter is assigned to a value with the 'on' function. The execution returns with a 'Result'
+object, which needs to be transformed. This object provides some meta data about the execution of the query.
+
+[source,scala]
+----
+  Query(
+    """
+      |match (n:Person)-[:HAS]-(m:Pet)
+      |where n.name = {name_1} or n.name = {name_2}
+      |return m.name as name, m.age as age
+    """.stripMargin)
+    .on("name_1", "Peter")
+    .on("name_2", "Timo")
+    .execute[IndexedSeqResult]()
+    .transform(row => (row[String]("name"), row[Int]("age")))
+----
+
+The result of a query is designed as a table with rows and columns. Choose a concrete 'Result' type to get the
+correct quantity of rows.
+
+[source,scala]
+----
+// #M = 0
+myQuery
+.execute[IgnoredResult]()
+
+// #M = 1
+val x: String =
+  myQuery
+    .execute[SingleResult]()
+    .transform(row => row[String]("name"))
+
+// #M = 0..1
+val x: Option[String] =
+  myQuery
+    .execute[SingleOptResult]()
+    .transform(row => row[String]("name"))
+
+// #M = 0..N
+val x: IndexedSeq[String] =
+  myQuery
+    .execute[IndexedSeqResult]()
+    .transform(row => row[String]("name"))
+
+// #M = 1..N
+val x: IndexedSeq[String] =
+  myQuery
+    .execute[IndexedNonEmptySeqResult]()
+    .transform(row => row[String]("name"))
+----
+
+The API comes with many mappers to handle native Java types and some common types. Additional mappers for custom types
+can be easily added.
+
+=== License
+
+Copyright (c) 2019 Eric Löffler
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program.  If not, see _http://www.gnu.org/licenses/_.
